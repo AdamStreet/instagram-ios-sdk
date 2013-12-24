@@ -8,3 +8,4 @@
 
 #import "Instagram.h"
 #import "IGRequest.h"
+#import "InstagramNotificationKeys.h"

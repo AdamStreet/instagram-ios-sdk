@@ -17,6 +17,9 @@
 @property(nonatomic, strong) NSString* accessToken;
 @property(nonatomic, weak) id<IGSessionDelegate> sessionDelegate;
 
++ (void)initSharedInstance;
++ (instancetype)sharedInstance;
+
 -(id)initWithClientId:(NSString*)clientId delegate:(id<IGSessionDelegate>)delegate;
 
 -(void)authorize:(NSArray*)scopes;
@@ -42,12 +45,12 @@
 
 @protocol IGSessionDelegate <NSObject>
 
--(void)igDidLogin;
+-(void)instagramDidLogin:(Instagram *)instagram;
 
--(void)igDidNotLogin:(BOOL)cancelled;
+-(void)instagram:(Instagram *)instagram didNotLogin:(BOOL)cancelled;
 
--(void)igDidLogout;
+-(void)instagramDidLogout:(Instagram *)instagram;
 
--(void)igSessionInvalidated;
+-(void)instagramSessionInvalidated:(Instagram *)instagram;
 
 @end

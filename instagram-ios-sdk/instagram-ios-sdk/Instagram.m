@@ -8,6 +8,7 @@
 
 #import "Instagram.h"
 
+#import "InstagramNotificationKeys.h"
 
 static NSString* kDialogBaseURL         = @"https://instagram.com/";
 static NSString* kRestserverBaseURL     = @"https://api.instagram.com/v1/";
@@ -17,7 +18,9 @@ static NSString* kLogin                 = @"oauth/authorize";
 static NSString *requestFinishedKeyPath = @"state";
 static void *finishedContext            = @"finishedContext";
 
-@interface Instagram ()
+static NSString *kInstagramAccessTokenKey = @"InstagramAccessToken";
+
+@interface Instagram () <IGSessionDelegate>
 
 @property(nonatomic, strong) NSArray* scopes;
 @property(nonatomic, strong) NSString* clientId;
@@ -29,6 +32,65 @@ static void *finishedContext            = @"finishedContext";
 
 @implementation Instagram
 
++ (NSString *)cliendIdFromMainBundle
+{
+    NSArray *urlTypes = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleURLTypes"];
+    
+    if (![urlTypes count])
+        return nil;
+    
+    // Get instagram url sceme
+    __block NSArray *urlScemes = nil;
+    [urlTypes enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        if ([[obj objectForKey:@"CFBundleURLName"] isEqualToString:@"instagram_redirect_url"])
+        {
+            urlScemes = [obj objectForKey:@"CFBundleURLSchemes"];
+            *stop = YES;
+        }
+    }];
+    
+    if (!urlScemes || 1 < [urlScemes count])
+        return nil;
+    
+    NSString *urlSceme = [urlScemes firstObject];
+    
+    // crop id
+    // format: ig[clientID]
+    static NSString * const prefix = @"ig";
+    
+    NSMutableString *mutableString = [NSMutableString stringWithString:urlSceme];
+    [mutableString deleteCharactersInRange:NSMakeRange(0, [prefix length])];
+    
+    return mutableString;
+}
+
+static Instagram *sharedInstance = nil;
++ (void)initSharedInstance
+{
+    if (sharedInstance)
+    {
+        [[NSException exceptionWithName:InstagramErrorDomain
+                                 reason:@"Trying to re-initialize a shared instance"
+                               userInfo:nil] raise];
+    }
+    
+    NSString *clientId = [Instagram cliendIdFromMainBundle];
+    
+    if (!clientId)
+    {
+        [[NSException exceptionWithName:InstagramErrorDomain
+                                 reason:@"Cannot find registered URL scheme for name: instagram_redirect_url"
+                               userInfo:nil] raise];
+    }
+    
+    sharedInstance = [[Instagram alloc] initWithClientId:clientId delegate:nil];
+}
+
++ (instancetype)sharedInstance
+{
+    return sharedInstance;
+}
+
 @synthesize accessToken = _accessToken;
 @synthesize sessionDelegate = _sessionDelegate;
 @synthesize scopes = _scopes;
@@ -38,6 +100,10 @@ static void *finishedContext            = @"finishedContext";
     self = [super init];
     if (self) {
         self.clientId = clientId;
+        if (!delegate)
+        {
+            delegate = self;
+        }
         self.sessionDelegate = delegate;
         _requests = [[NSMutableSet alloc] init];
     }
@@ -55,6 +121,18 @@ static void *finishedContext            = @"finishedContext";
     }
 }
 
+#pragma mark - setters/getters
+- (void)setAccessToken:(NSString *)accessToken
+{
+    [[NSUserDefaults standardUserDefaults] setObject:accessToken forKey:kInstagramAccessTokenKey];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (NSString *)accessToken
+{
+    return [[NSUserDefaults standardUserDefaults] objectForKey:kInstagramAccessTokenKey];
+}
+
 #pragma mark - internal
 
 -(void)invalidateSession {
@@ -67,8 +145,8 @@ static void *finishedContext            = @"finishedContext";
         [cookies deleteCookie:cookie];
     }
 
-    if ([self.sessionDelegate respondsToSelector:@selector(igSessionInvalidated)]) {
-        [self.sessionDelegate igSessionInvalidated];
+    if ([self.sessionDelegate respondsToSelector:@selector(instagramSessionInvalidated:)]) {
+        [self.sessionDelegate instagramSessionInvalidated:self];
     }
 }
 
@@ -189,8 +267,8 @@ static void *finishedContext            = @"finishedContext";
 - (void)logout {
     [self invalidateSession];
     
-    if ([self.sessionDelegate respondsToSelector:@selector(igDidLogout)]) {
-        [self.sessionDelegate igDidLogout];
+    if ([self.sessionDelegate respondsToSelector:@selector(instagramDidLogout:)]) {
+        [self.sessionDelegate instagramDidLogout:self];
     }
 }
 
@@ -233,8 +311,8 @@ static void *finishedContext            = @"finishedContext";
  */
 - (void)igDidLogin:(NSString *)token /*expirationDate:(NSDate *)expirationDate*/ {
     self.accessToken = token;
-    if ([self.sessionDelegate respondsToSelector:@selector(igDidLogin)]) {
-        [self.sessionDelegate igDidLogin];
+    if ([self.sessionDelegate respondsToSelector:@selector(instagramDidLogin:)]) {
+        [self.sessionDelegate instagramDidLogin:self];
     }
     
 }
@@ -243,9 +321,32 @@ static void *finishedContext            = @"finishedContext";
  * Did not login call the not login delegate
  */
 - (void)igDidNotLogin:(BOOL)cancelled {
-    if ([self.sessionDelegate respondsToSelector:@selector(igDidNotLogin:)]) {
-        [self.sessionDelegate igDidNotLogin:cancelled];
+    if ([self.sessionDelegate respondsToSelector:@selector(instagram:didNotLogin:)]) {
+        [self.sessionDelegate instagram:self didNotLogin:cancelled];
     }
+}
+
+
+#pragma mark - IGSessionDelegate
+
+-(void)instagramDidLogin:(Instagram *)instagram
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName:kInstagramDidLogin object:nil];
+}
+
+-(void)instagram:(Instagram *)instagram didNotLogin:(BOOL)cancelled
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName:kInstagramDidNotLogin object:nil];
+}
+
+-(void)instagramDidLogout:(Instagram *)instagram
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName:kInstagramDidLogout object:nil];
+}
+
+-(void)instagramSessionInvalidated:(Instagram *)instagram
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName:kInstagramSessionInvalidated object:nil];
 }
 
 @end
